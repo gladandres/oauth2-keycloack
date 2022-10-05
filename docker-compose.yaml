@@ -1,0 +1,115 @@
+version: '3.5'
+
+services:
+
+  proxy:
+    image: quay.io/oauth2-proxy/oauth2-proxy #:v7.2.1
+    container_name: oauth2-proxy
+    # command: --config /oauth2-proxy.cfg
+    ports:
+      - 4180:4180
+      # - 443:443
+    environment:
+      # - OAUTH2_PROXY_PROVIDER=keycloak-oidc
+      # - OAUTH2_PROXY_CLIENT_ID=oauth2-proxy+keycloak
+      # - OAUTH2_PROXY_CLIENT_SECRET=hHUtbaLObFIAqZH3ecsBoNAcFTL3JXGS
+      # - OAUTH2_PROXY_REDIRECT_URL=http://lvh.me/oauth2/callback
+      # - OAUTH2_PROXY_OIDC_ISSUER_URL=http://keycloak.lvh.me:8080/auth/realms/dev
+      
+      - OAUTH2_PROXY_EMAIL_DOMAINS=* #example.org
+      - OAUTH2_PROXY_COOKIE_SECRET=MTExMTExMTExMTExMTExMQ==
+      - OAUTH2_PROXY_COOKIE_SECURE=false
+      - OAUTH2_PROXY_HTTP_ADDRESS=0.0.0.0:4180
+      - OAUTH2_PROXY_SILENCE_PING_LOGGING=true
+      - OAUTH2_PROXY_REVERSE_PROXY=true
+      - OAUTH2_PROXY_SKIP_PROVIDER_BUTTON=true
+      - OAUTH2_PROXY_REDIRECT_URL=http://lvh.me/oauth2/callback
+      
+      - OAUTH2_PROXY_PROVIDER=keycloak
+      - OAUTH2_PROXY_CLIENT_ID=oauth2-proxy
+      - OAUTH2_PROXY_CLIENT_SECRET=xhmA7z3kgVFhZnN9JC3kVpDPmMxVz1gp
+      - OAUTH2_PROXY_LOGIN_URL=http://keycloak.lvh.me:8080/realms/dev/protocol/openid-connect/auth
+      - OAUTH2_PROXY_REDEEM_URL=http://keycloak.lvh.me:8080/realms/dev/protocol/openid-connect/token
+      - OAUTH2_PROXY_PROFILE_URL=http://keycloak.lvh.me:8080/realms/dev/protocol/openid-connect/userinfo
+      - OAUTH2_PROXY_VALIDATE_URL=http://keycloak.lvh.me:8080/realms/dev/protocol/openid-connect/userinfo
+      - OAUTH2_PROXY_UPSTREAMS=http://lvh.me/
+
+    networks:
+      - proxy-network
+    # volumes:
+    #   - ./config/oauth2-proxy.cfg:/oauth2-proxy.cfg
+    depends_on:
+      - keycloak
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:18.0.2 #jboss/keycloak #:16.1.0
+    environment:
+      - KEYCLOAK_ADMIN=admin
+      - KEYCLOAK_ADMIN_PASSWORD=admin
+      - DB_ADDR=mariadb
+      - DB_USER=keycloak
+      - DB_PASSWORD=password
+    container_name: keycloak
+    # volumes:
+    #   - ./keycloak:/tmp/realm-config
+    command: start-dev
+
+    #   [
+    #     '-Dkeycloak.migration.action=import',
+    #     '-Dkeycloak.migration.provider=dir',
+    #     '-Dkeycloak.migration.dir=/tmp/realm-config',
+    #     '-Dkeycloak.migration.strategy=IGNORE_EXISTING',
+    #   ]
+    networks:
+      proxy-network:
+        aliases:
+          - keycloak.lvh.me
+    ports:
+      - 8080:8080
+    depends_on:
+      - mariadb
+
+  mariadb:
+    image: mariadb #:10.5.5
+    environment:
+      - MYSQL_DATABASE=keycloak
+      - MYSQL_ROOT_PASSWORD=password
+      - MYSQL_USER=keycloak
+      - MYSQL_PASSWORD=password
+    container_name: mariadb #keycloak-db
+    ports:
+      - 3306
+    networks:
+      - proxy-network
+    volumes:
+      - vol-mariadb:/var/lib/mysql
+
+  server:
+    image: kennethreitz/httpbin
+    # environment:
+    #   - "GUNICORN_CMD_ARGS=\"--capture-output --error-logfile - --access-logfile - --access-logformat \"%(h)s %(t)s %(r)s %(s)s Host: %({Host}i)s}\"\""
+    ports:
+      - 8000:80
+    container_name: server
+    networks:
+      - proxy-network
+
+  nginx:
+    image: nginx:alpine
+    ports:
+      - 80:80
+    container_name: nginx
+    volumes:
+      - ./nginx:/etc/nginx/conf.d
+    networks:
+      - proxy-network
+    depends_on:
+      - server
+      - proxy
+
+networks:
+  proxy-network:
+    name: local
+
+volumes:
+  vol-mariadb:
